@@ -74,6 +74,9 @@ export interface VideoMetadata {
 }
 
 export interface SearchOptions {
+  /** The original profile URL provided by the user */
+  profileUrl: string;
+  /** Extracted username from the URL */
   username: string;
   platform: Platform;
   quantity: number;

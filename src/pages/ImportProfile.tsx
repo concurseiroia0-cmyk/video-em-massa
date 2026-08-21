@@ -2,22 +2,22 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   Search, Download, CheckSquare, Square, Eye, Heart,
   Clock, ArrowLeft, Play, X, Pause, RotateCcw, RefreshCw,
-  AlertTriangle, CheckCircle2, ChevronDown, Loader2,
+  AlertTriangle, CheckCircle2, Loader2,
   ShieldCheck, ShieldAlert, Terminal, ExternalLink, Link2,
-  ChevronRight
+  Globe
 } from 'lucide-react';
 import { createProvider } from '../providers';
 import type { Platform, VideoMetadata, ProfileInfo, SortOption, ProfileResolutionResult, ResolutionDebug } from '../providers/types';
 import { ImportQueueManager } from '../queue/manager';
 import type { ImportJob, ImportQueueState } from '../queue/types';
 import { formatNumber, formatDuration, getSourceBg } from '../utils/helpers';
+import { parseProfileUrl } from '../utils/urlParser';
 import toast from 'react-hot-toast';
 
 type PageStep = 'search' | 'resolving' | 'results' | 'importing';
 
 export default function ImportProfile() {
-  const [platform, setPlatform] = useState<Platform>('tiktok');
-  const [username, setUsername] = useState('');
+  const [profileUrl, setProfileUrl] = useState('');
   const [quantity, setQuantity] = useState(10);
   const [sortBy, setSortBy] = useState<SortOption>('views');
   const [searching, setSearching] = useState(false);
@@ -33,33 +33,81 @@ export default function ImportProfile() {
   const [expandedJob, setExpandedJob] = useState<string | null>(null);
   const [embedVideo, setEmbedVideo] = useState<VideoMetadata | null>(null);
   const [expandedUrl, setExpandedUrl] = useState<string | null>(null);
+  const [detectedPlatform, setDetectedPlatform] = useState<Platform | null>(null);
 
   useEffect(() => () => { queueRef.current?.stop(); }, []);
 
+  // Auto-detect platform from URL
+  useEffect(() => {
+    if (profileUrl.trim()) {
+      const parsed = parseProfileUrl(profileUrl);
+      setDetectedPlatform(parsed.platform);
+    } else {
+      setDetectedPlatform(null);
+    }
+  }, [profileUrl]);
+
   // ── Search + Resolve ──
   const handleSearch = useCallback(async () => {
-    if (!username.trim()) { toast.error('Digite o @ do perfil'); return; }
-    setSearching(true); setStep('resolving');
-    setResolution(null); setResolvedProfile(null); setDebug(null);
+    if (!profileUrl.trim()) { toast.error('Cole a URL do perfil'); return; }
+
+    // Step 1: Parse and validate URL
+    const parsed = parseProfileUrl(profileUrl);
+    if (!parsed.valid) {
+      toast.error(parsed.error || 'URL inválida');
+      return;
+    }
+
+    const platform = parsed.platform!;
+    const username = parsed.username!;
+
+    setSearching(true);
+    setStep('resolving');
+    setResolution(null);
+    setResolvedProfile(null);
+    setDebug(null);
+
     try {
+      // Step 2: Resolve exact profile
       const provider = createProvider(platform);
       const result = await provider.resolveProfile(username);
-      setResolution(result); setDebug(result.debug);
-      if (!result.success) { toast.error(result.error); setStep('search'); return; }
-      const normalizedInput = username.trim().replace(/^@/, '').toLowerCase();
-      if (result.profile.username.toLowerCase() !== normalizedInput) {
-        toast.error('Perfil resolvido não corresponde ao solicitado.'); setStep('search'); return;
+      setResolution(result);
+      setDebug(result.debug);
+
+      if (!result.success) {
+        toast.error(result.error);
+        setStep('search');
+        return;
       }
+
+      // Step 3: Validate resolved profile matches URL
+      if (result.profile.username.toLowerCase() !== username.toLowerCase()) {
+        toast.error('Perfil resolvido não corresponde à URL fornecida.');
+        setStep('search');
+        return;
+      }
+
       setResolvedProfile(result.profile);
+
+      // Step 4: Fetch videos with ownership validation
       const videoResult = await provider.getVideos(
-        { username: result.profile.username, platform, quantity, sortBy }, result.profile
+        { profileUrl: parsed.normalizedUrl!, username: result.profile.username, platform, quantity, sortBy },
+        result.profile
       );
-      setDebug(videoResult.debug); setVideos(videoResult.items);
-      setSelected(new Set(videoResult.items.map((v) => v.id))); setStep('results');
+
+      setDebug(videoResult.debug);
+      setVideos(videoResult.items);
+      setSelected(new Set(videoResult.items.map((v) => v.id)));
+      setStep('results');
+
       toast.success(`${videoResult.items.length} vídeos de @${result.profile.username}`);
-    } catch { toast.error('Erro ao buscar perfil.'); setStep('search'); }
-    finally { setSearching(false); }
-  }, [platform, username, quantity, sortBy]);
+    } catch {
+      toast.error('Erro ao buscar perfil. Tente novamente.');
+      setStep('search');
+    } finally {
+      setSearching(false);
+    }
+  }, [profileUrl, quantity, sortBy]);
 
   const toggleSelect = useCallback((id: string) => {
     setSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -75,13 +123,15 @@ export default function ImportProfile() {
     const sel = videos.filter((v) => selected.has(v.id));
     if (sel.length === 0) { toast.error('Selecione pelo menos 1 vídeo'); return; }
     if (!resolvedProfile) { toast.error('Perfil não resolvido'); return; }
-    const provider = createProvider(platform);
+    const provider = createProvider(resolvedProfile.platform);
     const manager = new ImportQueueManager(provider, sel, {
       onQueueUpdate: (state) => { setQueueState({ ...state }); if (state.completedJobs === state.totalJobs && state.totalJobs > 0) toast.success(`Todos os ${state.totalJobs} vídeos importados!`); },
     }, { maxConcurrent: 3 });
     manager.setSource(resolvedProfile.username, sortBy);
-    queueRef.current = manager; setStep('importing'); manager.start();
-  }, [videos, selected, platform, resolvedProfile, sortBy]);
+    queueRef.current = manager;
+    setStep('importing');
+    manager.start();
+  }, [videos, selected, resolvedProfile, sortBy]);
 
   const togglePause = useCallback(() => {
     if (!queueRef.current) return;
@@ -116,8 +166,8 @@ export default function ImportProfile() {
           <div>
             <h1 className="text-2xl font-bold text-white">Importar Perfil</h1>
             <p className="text-sm text-slate-400">
-              {step === 'search' && 'Encontre e selecione vídeos públicos de qualquer perfil'}
-              {step === 'resolving' && 'Resolvendo perfil exato...'}
+              {step === 'search' && 'Cole a URL do perfil para encontrar vídeos públicos'}
+              {step === 'resolving' && 'Coletando vídeos do perfil...'}
               {step === 'results' && `${videos.length} vídeos encontrados — ${selected.size} selecionados`}
               {step === 'importing' && 'Importação em progresso'}
             </p>
@@ -134,20 +184,29 @@ export default function ImportProfile() {
       {step === 'search' && (
         <div className="space-y-6">
           <div className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-6">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <div>
-                <label className="mb-2 block text-xs font-medium text-slate-400">Plataforma</label>
-                <div className="flex gap-2">
-                  <button onClick={() => setPlatform('tiktok')} className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all ${platform === 'tiktok' ? 'border-pink-500/50 bg-pink-500/15 text-pink-400' : 'border-slate-700 bg-slate-800/50 text-slate-400 hover:border-slate-600'}`}>♪ TikTok</button>
-                  <button onClick={() => setPlatform('instagram')} className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all ${platform === 'instagram' ? 'border-purple-500/50 bg-purple-500/15 text-purple-light' : 'border-slate-700 bg-slate-800/50 text-slate-400 hover:border-slate-600'}`}>◎ Instagram</button>
-                </div>
+            {/* URL Input — Full width */}
+            <div className="mb-4">
+              <label className="mb-2 block text-xs font-medium text-slate-400">URL do Perfil</label>
+              <div className="relative">
+                <Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="url"
+                  value={profileUrl}
+                  onChange={(e) => setProfileUrl(e.target.value)}
+                  placeholder="https://www.instagram.com/flamengo/ ou https://www.tiktok.com/@flamengo"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800/50 pl-10 pr-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition-colors focus:border-purple-electric/50 font-mono"
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                />
+                {detectedPlatform && (
+                  <span className={`absolute right-3 top-1/2 -translate-y-1/2 rounded-full px-2 py-0.5 text-[10px] font-medium ${getSourceBg(detectedPlatform)}`}>
+                    {detectedPlatform === 'tiktok' ? '♪ TikTok' : '◎ Instagram'}
+                  </span>
+                )}
               </div>
-              <div>
-                <label className="mb-2 block text-xs font-medium text-slate-400">Perfil (@username)</label>
-                <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="@flamengo"
-                  className="w-full rounded-lg border border-slate-700 bg-slate-800/50 px-4 py-2.5 text-sm text-white placeholder-slate-500 outline-none transition-colors focus:border-purple-electric/50"
-                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()} />
-              </div>
+            </div>
+
+            {/* Options row */}
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div>
                 <label className="mb-2 block text-xs font-medium text-slate-400">Quantidade</label>
                 <div className="flex gap-1.5">
@@ -164,13 +223,30 @@ export default function ImportProfile() {
                   <option value="recent">Mais Recentes</option>
                 </select>
               </div>
-            </div>
-            <div className="mt-5 flex items-center gap-4">
-              <button onClick={handleSearch} disabled={searching || !username.trim()} className="flex items-center gap-2 rounded-lg bg-purple-electric px-6 py-2.5 text-sm font-semibold text-white transition-all hover:bg-purple-dark disabled:opacity-40 disabled:cursor-not-allowed">
-                {searching ? (<><Loader2 className="h-4 w-4 animate-spin" /> Buscando...</>) : (<><Search className="h-4 w-4" /> Encontrar Vídeos</>)}
-              </button>
+              <div className="flex items-end">
+                <button onClick={handleSearch} disabled={searching || !profileUrl.trim()} className="w-full flex items-center justify-center gap-2 rounded-lg bg-purple-electric px-6 py-2.5 text-sm font-semibold text-white transition-all hover:bg-purple-dark disabled:opacity-40 disabled:cursor-not-allowed">
+                  {searching ? (<><Loader2 className="h-4 w-4 animate-spin" /> Buscando...</>) : (<><Search className="h-4 w-4" /> Encontrar Vídeos</>)}
+                </button>
+              </div>
             </div>
           </div>
+
+          {/* URL Examples */}
+          <div className="rounded-xl border border-slate-700/30 bg-slate-800/30 p-4">
+            <h3 className="text-xs font-medium text-white mb-2">Formatos aceitos</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="rounded-lg bg-slate-900/50 p-2">
+                <span className="text-[10px] text-purple-light font-medium">Instagram</span>
+                <p className="text-[11px] text-slate-400 font-mono mt-0.5">https://www.instagram.com/perfil/</p>
+              </div>
+              <div className="rounded-lg bg-slate-900/50 p-2">
+                <span className="text-[10px] text-pink-400 font-medium">TikTok</span>
+                <p className="text-[11px] text-slate-400 font-mono mt-0.5">https://www.tiktok.com/@perfil</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Error display */}
           {resolution && !resolution.success && (
             <div className="animate-slide-in rounded-xl border border-red-500/30 bg-red-500/10 p-5">
               <div className="flex items-start gap-3">
@@ -189,8 +265,8 @@ export default function ImportProfile() {
       {step === 'resolving' && (
         <div className="flex flex-col items-center justify-center py-20 animate-slide-in">
           <Loader2 className="h-12 w-12 text-purple-electric animate-spin mb-4" />
-          <h3 className="text-lg font-semibold text-white">Encontrando vídeos...</h3>
-          <p className="mt-2 text-sm text-slate-400">Coletando conteúdo público de @{username.replace('@', '')}</p>
+          <h3 className="text-lg font-semibold text-white">Coletando vídeos...</h3>
+          <p className="mt-2 text-sm text-slate-400">Buscando conteúdo público do perfil</p>
         </div>
       )}
 
@@ -212,6 +288,7 @@ export default function ImportProfile() {
                   </span>
                 </div>
                 <p className="text-xs text-slate-500">@{resolvedProfile.username} · {formatNumber(resolvedProfile.followers)} seguidores</p>
+                <a href={resolvedProfile.profileUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-purple-electric hover:text-purple-light font-mono">{resolvedProfile.profileUrl}</a>
               </div>
               <div className="text-right">
                 <p className="text-2xl font-bold text-white">{videos.length}</p>
@@ -228,7 +305,6 @@ export default function ImportProfile() {
                 <span className="text-xs text-slate-500">de {videos.length}</span>
                 <div className="h-4 w-px bg-slate-700" />
                 <button onClick={() => selectTop(10)} className="rounded-md bg-slate-700/50 px-2.5 py-1 text-[10px] text-slate-300 hover:bg-slate-700 transition-colors">TOP 10</button>
-                <button onClick={() => selectTop(25)} className="rounded-md bg-slate-700/50 px-2.5 py-1 text-[10px] text-slate-300 hover:bg-slate-700 transition-colors">TOP 25</button>
                 <button onClick={() => selectTop(50)} className="rounded-md bg-slate-700/50 px-2.5 py-1 text-[10px] text-slate-300 hover:bg-slate-700 transition-colors">TOP 50</button>
                 <button onClick={() => selectTop(100)} className="rounded-md bg-slate-700/50 px-2.5 py-1 text-[10px] text-slate-300 hover:bg-slate-700 transition-colors">TOP 100</button>
                 <button onClick={() => setSelected(new Set(videos.map((v) => v.id)))} className="rounded-md bg-slate-700/50 px-2.5 py-1 text-[10px] text-slate-300 hover:bg-slate-700 transition-colors">Todos</button>
@@ -354,9 +430,9 @@ export default function ImportProfile() {
             <div className="p-4">
               <p className="text-sm font-medium text-white">{embedVideo.title}</p>
               <div className="mt-2 flex items-center gap-4 text-xs text-slate-400">
-                <span className="flex items-center gap-1"><Eye className="h-3 w-3" />{formatNumber(embedVideo.views ?? 0)}</span>
-                <span className="flex items-center gap-1"><Heart className="h-3 w-3" />{formatNumber(embedVideo.likes ?? 0)}</span>
-                <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{formatDuration(embedVideo.duration ?? 0)}</span>
+                {embedVideo.views != null && <span className="flex items-center gap-1"><Eye className="h-3 w-3" />{formatNumber(embedVideo.views)}</span>}
+                {embedVideo.likes != null && <span className="flex items-center gap-1"><Heart className="h-3 w-3" />{formatNumber(embedVideo.likes)}</span>}
+                {embedVideo.duration != null && <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{formatDuration(embedVideo.duration)}</span>}
               </div>
               <a href={embedVideo.permalink} target="_blank" rel="noopener noreferrer"
                 className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-purple-electric/15 py-2 text-xs font-medium text-purple-electric hover:bg-purple-electric/25 transition-colors">
@@ -396,7 +472,7 @@ function VideoCard({ video, index, isSelected, onToggle, onPreview, onToggleUrl,
           <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 hover:opacity-100 transition-opacity">
             <Play className="h-8 w-8 text-white ml-0.5" />
           </div>
-          {video.duration && (
+          {video.duration != null && (
             <span className="absolute bottom-1 right-1 rounded bg-black/70 px-1.5 py-0.5 text-[9px] text-white font-medium">
               {formatDuration(video.duration)}
             </span>
@@ -430,19 +506,16 @@ function VideoCard({ video, index, isSelected, onToggle, onPreview, onToggleUrl,
 
           {/* Actions */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            {/* Preview */}
             {video.embedUrl && (
               <button onClick={onPreview}
                 className="flex items-center gap-1.5 rounded-lg bg-purple-electric/15 px-3 py-1.5 text-[11px] font-medium text-purple-electric hover:bg-purple-electric/25 transition-colors">
                 <Play className="h-3 w-3" /> Visualizar
               </button>
             )}
-            {/* Original link */}
             <a href={video.permalink} target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-1.5 rounded-lg bg-slate-700/50 px-3 py-1.5 text-[11px] font-medium text-slate-300 hover:bg-slate-700 transition-colors">
               <ExternalLink className="h-3 w-3" /> Ver vídeo original
             </a>
-            {/* Toggle URL display */}
             <button onClick={onToggleUrl}
               className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-[10px] text-slate-500 hover:text-slate-300 transition-colors">
               <Link2 className="h-3 w-3" /> {showUrl ? 'Ocultar URL' : 'URL'}
