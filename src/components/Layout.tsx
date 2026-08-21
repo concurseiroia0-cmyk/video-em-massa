@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Download, Layers, FileVideo, FolderOpen,
   Megaphone, Calendar, Users, Send, ChevronLeft, ChevronRight,
-  Zap, Settings, Bell, Search
+  Zap, Settings, Bell, Search, Globe
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -20,6 +20,7 @@ const navItems = [
   { path: '/agenda', label: 'Agenda', icon: Calendar },
   { path: '/contas', label: 'Contas Sociais', icon: Users },
   { path: '/publicacoes', label: 'Publicações', icon: Send },
+  { path: '/importar-perfil', label: 'Importar Perfil', icon: Globe },
 ];
 
 export default function Layout({ children }: LayoutProps) {

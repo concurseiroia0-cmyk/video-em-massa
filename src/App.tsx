@@ -10,6 +10,7 @@ import Campaigns from './pages/Campaigns';
 import Scheduler from './pages/Scheduler';
 import Accounts from './pages/Accounts';
 import Publications from './pages/Publications';
+import ImportProfile from './pages/ImportProfile';
 import Landing from './pages/Landing';
 
 export default function App() {
@@ -52,6 +53,7 @@ export default function App() {
           <Route path="/agenda" element={<Scheduler />} />
           <Route path="/contas" element={<Accounts />} />
           <Route path="/publicacoes" element={<Publications />} />
+          <Route path="/importar-perfil" element={<ImportProfile />} />
         </Routes>
       </Layout>
     </HashRouter>
