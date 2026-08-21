@@ -3,11 +3,6 @@
  *
  * Creates the appropriate ContentProvider for each platform.
  * Instagram and TikTok are independent modules with no shared implementation code.
- *
- * Usage:
- *   const provider = createProvider('instagram');
- *   const profile = await provider.getProfile('natgeo');
- *   const videos = await provider.getVideos({ username: 'natgeo', platform: 'instagram', quantity: 100, sortBy: 'views' });
  */
 
 import type { Platform, ContentProvider } from './types';
@@ -27,4 +22,14 @@ export function createProvider(platform: Platform): ContentProvider {
   return factory();
 }
 
-export type { Platform, ContentProvider, VideoMetadata, ProfileInfo, SearchOptions, PaginatedResult, SortOption } from './types';
+export type {
+  Platform,
+  ContentProvider,
+  VideoMetadata,
+  ProfileInfo,
+  SearchOptions,
+  PaginatedResult,
+  SortOption,
+  ProfileResolutionResult,
+  ResolutionDebug,
+} from './types';
