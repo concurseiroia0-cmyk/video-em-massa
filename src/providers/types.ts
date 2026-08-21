@@ -10,15 +10,18 @@ export type Platform = 'instagram' | 'tiktok';
 
 export type SortOption = 'views' | 'recent' | 'likes';
 
-export interface ProviderConfig {
-  /** Maximum results per page */
-  pageSize: number;
-  /** Timeout per request in milliseconds */
-  requestTimeout: number;
-}
+/** Status of collected content in the pipeline */
+export type ContentStatus =
+  | 'found'        // Just discovered
+  | 'selected'     // User selected it
+  | 'queued'       // In import queue
+  | 'importing'    // Being downloaded
+  | 'imported'     // Downloaded to storage
+  | 'processing'   // Being processed by editor
+  | 'completed'    // Fully processed
+  | 'failed';      // Error occurred
 
 export interface ProfileInfo {
-  /** Must match the exact requested username (case-insensitive match) */
   id: string;
   username: string;
   displayName: string;
@@ -28,7 +31,6 @@ export interface ProfileInfo {
   following: number;
   postsCount: number;
   platform: Platform;
-  /** Direct profile URL on the platform */
   profileUrl: string;
 }
 
@@ -44,123 +46,79 @@ export interface VideoMetadata {
   /** Video URL (publicly accessible) */
   videoUrl: string;
   /** Duration in seconds */
-  duration: number;
-  /** View count */
-  views: number;
-  /** Like count */
-  likes: number;
-  /** Comment count */
-  comments: number;
-  /** ISO date string of when it was posted */
-  publishedAt: string;
+  duration: number | null;
+  /** View count (null if unavailable) */
+  views: number | null;
+  /** Like count (null if unavailable) */
+  likes: number | null;
+  /** Comment count (null if unavailable) */
+  comments: number | null;
+  /** ISO date string of when it was published (null if unavailable) */
+  publishedAt: string | null;
   /** Source platform */
   platform: Platform;
-  /** Owner profile username — must match the resolved profile exactly */
+  /** Owner profile username */
   ownerUsername: string;
-  /** Owner profile ID — must match the resolved profile ID */
+  /** Owner profile ID */
   ownerId: string;
-  /** Direct link to the content on the platform */
+  /** Permanent link to the original content on the platform */
   permalink: string;
+  /** Shareable URL for the content (may differ from permalink) */
+  shareUrl: string;
+  /** Embed URL for iframe preview (null if not available) */
+  embedUrl: string | null;
   /** Whether the ownership has been validated */
   ownershipValidated: boolean;
+  /** Current status in the pipeline */
+  status: ContentStatus;
 }
 
 export interface SearchOptions {
-  /** The exact username to search for (will be normalized) */
   username: string;
   platform: Platform;
-  /** Number of results to return (10, 50, or 100) */
   quantity: number;
-  /** How to sort results */
   sortBy: SortOption;
 }
 
 export interface PaginatedResult<T> {
   items: T[];
-  /** Total items available (may be an estimate) */
   total: number;
-  /** Number of items returned in this page */
   returned: number;
-  /** Current page number (0-based) */
   page: number;
-  /** Whether more pages are available */
   hasMore: boolean;
-  /** Debug information about the resolution process */
   debug: ResolutionDebug;
 }
 
-/**
- * Debug information for profile resolution and video collection.
- * Visible in the UI for verification.
- */
 export interface ResolutionDebug {
-  /** The original input from the user */
   requestedUsername: string;
-  /** The normalized username after cleanup */
   normalizedUsername: string;
-  /** The resolved profile (null if resolution failed) */
   resolvedProfile: ProfileInfo | null;
-  /** Total videos fetched from the platform */
   totalFetched: number;
-  /** Videos that passed ownership validation */
   ownershipPassed: number;
-  /** Videos rejected due to owner mismatch */
   ownershipRejected: number;
-  /** Any warnings during the process */
   warnings: string[];
-  /** Resolution steps taken */
   steps: string[];
+  /** Backend source: 'api' | 'mock' */
+  dataSource: 'api' | 'mock';
+  /** Elapsed time in ms */
+  elapsed?: number;
 }
 
-/**
- * Result of profile resolution.
- * Either succeeds with a ProfileInfo or fails with an error message.
- */
 export type ProfileResolutionResult =
   | { success: true; profile: ProfileInfo; debug: ResolutionDebug }
   | { success: false; error: string; debug: ResolutionDebug };
 
 /**
  * All providers must implement this interface.
- * Each platform has its own independent implementation.
  */
 export interface ContentProvider {
-  /** The platform this provider handles */
   readonly platform: Platform;
 
-  /**
-   * Resolve and validate a profile by username.
-   *
-   * This is the CRITICAL first step. It must:
-   * 1. Normalize the input (remove @, spaces, etc.)
-   * 2. Look up the exact profile (not approximate)
-   * 3. Validate that the resolved profile matches the requested username
-   * 4. Return success with validated profile, or failure with error
-   *
-   * MUST NOT return an approximate or similar profile.
-   * If the exact profile cannot be found, return failure.
-   */
   resolveProfile(username: string): Promise<ProfileResolutionResult>;
 
-  /**
-   * Fetch videos from a public profile.
-   *
-   * CRITICAL RULES:
-   * - Only return videos that belong to the exact profile
-   * - Every video must have ownerUsername === profile.username
-   * - Every video must have ownerId === profile.id
-   * - Reject any video where ownership cannot be confirmed
-   * - Log all rejections in the debug output
-   */
   getVideos(options: SearchOptions, profile: ProfileInfo): Promise<PaginatedResult<VideoMetadata>>;
 
-  /** Fetch metadata for a single video by ID */
   getVideoMetadata(videoId: string): Promise<VideoMetadata>;
 
-  /**
-   * Fetch the media file for a video.
-   * Returns a Blob that can be stored (e.g., Supabase Storage).
-   * Only works with publicly accessible media URLs.
-   */
   getMedia(video: VideoMetadata): Promise<Blob>;
 }

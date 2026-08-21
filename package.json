@@ -5,21 +5,32 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "server": "npx tsx src/server/index.ts",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview"
   },
   "dependencies": {
+    "cors": "^2.8.6",
     "date-fns": "^4.4.0",
+    "express": "^5.2.1",
     "lucide-react": "^1.33.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-hot-toast": "^2.6.0",
     "react-router-dom": "^7.18.2",
-    "recharts": "^3.10.1"
+    "recharts": "^3.10.1",
+    "tsx": "^4.23.12"
+  },
+  "serverDependencies": {
+    "express": "^4.21.0",
+    "cors": "^2.8.5",
+    "tsx": "^4.19.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",

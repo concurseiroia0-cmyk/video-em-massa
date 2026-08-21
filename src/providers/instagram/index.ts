@@ -220,12 +220,13 @@ export class InstagramProvider implements ContentProvider {
   }
 
   async getVideoMetadata(videoId: string): Promise<VideoMetadata> {
+    const permalink = `https://www.instagram.com/reel/${videoId}/`;
     return {
       id: videoId,
       title: `Instagram Video ${videoId}`,
       description: `Public Instagram video ${videoId}`,
       thumbnailUrl: `https://picsum.photos/seed/${videoId}/400/700`,
-      videoUrl: `https://example.com/public-content/ig/${videoId}.mp4`,
+      videoUrl: permalink,
       duration: 30,
       views: 100_000,
       likes: 10_000,
@@ -234,8 +235,11 @@ export class InstagramProvider implements ContentProvider {
       platform: 'instagram',
       ownerUsername: 'unknown',
       ownerId: 'unknown',
-      permalink: `https://www.instagram.com/p/${videoId}`,
+      permalink,
+      shareUrl: permalink,
+      embedUrl: `https://www.instagram.com/reel/${videoId}/embed/`,
       ownershipValidated: false,
+      status: 'found',
     };
   }
 
@@ -257,10 +261,10 @@ export class InstagramProvider implements ContentProvider {
   private sortVideos(videos: VideoMetadata[], sortBy: string): VideoMetadata[] {
     const sorted = [...videos];
     switch (sortBy) {
-      case 'views':  return sorted.sort((a, b) => b.views - a.views);
-      case 'likes':  return sorted.sort((a, b) => b.likes - a.likes);
+      case 'views':  return sorted.sort((a, b) => (b.views ?? 0) - (a.views ?? 0));
+      case 'likes':  return sorted.sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0));
       case 'recent': return sorted.sort(
-        (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
+        (a, b) => new Date(b.publishedAt ?? 0).getTime() - new Date(a.publishedAt ?? 0).getTime()
       );
       default: return sorted;
     }
@@ -285,6 +289,7 @@ export class InstagramProvider implements ContentProvider {
       ownershipRejected,
       warnings,
       steps,
+      dataSource: 'mock',
     };
   }
 }

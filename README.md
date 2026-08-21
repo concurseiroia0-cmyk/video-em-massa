@@ -2,70 +2,55 @@
 
 > Coleta em massa. Edita em lote. Publica no horário.
 
-## 🚀 Visão Geral
+## 🚀 Funcionalidades
 
-BatchPost é uma plataforma completa para criadores de conteúdo, agências e páginas de nicho que precisam coletar, editar e publicar dezenas ou centenas de vídeos do TikTok e Instagram automaticamente.
-
-### Funcionalidades
-
-- **Dashboard** — Métricas, gráficos e visão geral da operação
-- **Coletor de Conteúdo** — Busca e importação de vídeos por perfil
-- **Fila de Importação** — Pipeline visual com progresso e status
-- **Editor de Templates** — Processamento FFmpeg com camadas configuráveis
-- **Biblioteca** — Grid/lista com filtros, multi-select e player
-- **Campanhas** — Agrupamento e organização de vídeos
-- **Agenda** — Calendário e distribuição automática de posts
-- **Contas Sociais** — Conexão OAuth segura com TikTok/Instagram
-- **Publicações & Logs** — Status, retry automático e logs detalhados
-- **Importar Perfil** — Coleta de conteúdo público com providers modulares
+- **Dashboard** — Métricas e visão geral
+- **Importar Perfil** — Encontre e selecione vídeos públicos do Instagram/TikTok
+- **Fila de Importação** — Pipeline visual com progresso
+- **Editor de Templates** — Processamento FFmpeg com camadas
+- **Biblioteca** — Grid/lista com filtros e player
+- **Campanhas** — Organização de vídeos
+- **Agenda** — Calendário e agendamento
+- **Contas Sociais** — Conexão OAuth
+- **Publicações & Logs** — Status e retry
 
 ---
 
-## 📦 Public Content Collector — Módulo de Coleta de Conteúdo Público
+## 📦 Módulo de Coleta de Conteúdo Público
 
 ### Arquitetura
 
 ```
-src/providers/
-  types.ts                    # Interface comum para todos os providers
-  index.ts                    # Factory (cria provider correto por plataforma)
-  instagram/
-    index.ts                  # Provider Instagram (conteúdo público)
-    mockData.ts               # Dados simulados para demonstração
-  tiktok/
-    index.ts                  # Provider TikTok (conteúdo público)
-    mockData.ts               # Dados simulados para demonstração
-
-src/queue/
-  types.ts                    # Tipos do sistema de fila
-  manager.ts                  # Gerenciador de fila com concorrência
+src/
+├── providers/
+│   ├── types.ts              # Interface comum ContentProvider
+│   ├── index.ts              # Factory por plataforma
+│   ├── instagram/
+│   │   ├── index.ts          # Provider Instagram
+│   │   └── mockData.ts       # Dados simulados
+│   └── tiktok/
+│       ├── index.ts          # Provider TikTok
+│       └── mockData.ts       # Dados simulados
+├── queue/
+│   ├── types.ts              # Tipos da fila
+│   └── manager.ts            # Gerenciador com concorrência
+├── server/
+│   ├── index.ts              # Express server (backend)
+│   ├── routes/collect.ts     # API de coleta
+│   └── utils/ytdlp.ts        # Wrapper yt-dlp
+└── pages/
+    └── ImportProfile.tsx      # Página de coleta
 ```
 
-### Interface do Provider
+### Como Funciona
 
-Cada provider implementa:
-
-```typescript
-interface ContentProvider {
-  platform: Platform;
-  getProfile(username: string): Promise<ProfileInfo>;
-  getVideos(options: SearchOptions): Promise<PaginatedResult<VideoMetadata>>;
-  getVideoMetadata(videoId: string): Promise<VideoMetadata>;
-  getMedia(video: VideoMetadata): Promise<Blob>;
-}
-```
-
-### Sistema de Fila
-
-Cada job passa por: `pending → processing → completed/failed`
-
-- **Concorrência configurável**: `MAX_CONCURRENT_JOBS=3` (padrão)
-- **Retry automático**: até 3 tentativas com backoff exponencial
-- **Timeout**: 30 segundos por request (configurável)
-- **Progresso**: individual (0-100%) e geral
-- **Pause/Resume**: controle total da fila
-- **Logs**: cada ação registrada com timestamp
-- **Tratamento de erro**: erros classificados e reportados
+1. Usuário informa `@username` + plataforma
+2. `resolveProfile()` resolve o perfil EXATO (case-insensitive)
+3. Validação: `profile.username === requestedUsername`
+4. `getVideos()` busca vídeos e valida ownership de cada um
+5. Cada vídeo com `ownerUsername !== profile.username` é REJEITADO
+6. Resultados mostrados com thumbnails, métricas e links originais
+7. Usuário seleciona vídeos e pode importar
 
 ### Segurança
 
@@ -75,32 +60,6 @@ Cada job passa por: `pending → processing → completed/failed`
 - ✅ Sem contorno de anti-bot
 - ✅ Ferramentas open-source apenas
 - ✅ Variáveis de ambiente para secrets
-- ✅ Nenhuma credencial no frontend
-
----
-
-## 🛠 Dependências Open-Source Utilizadas
-
-| Dependência | Uso | Licença |
-|---|---|---|
-| React 19 | UI Framework | MIT |
-| TypeScript 6 | Type safety | Apache-2.0 |
-| Vite 8 | Build tool | MIT |
-| Tailwind CSS 4 | Styling | MIT |
-| React Router 7 | Routing | MIT |
-| Recharts | Gráficos | MIT |
-| Lucide React | Ícones | MIT |
-| react-hot-toast | Notificações | MIT |
-| date-fns | Manipulação de datas | MIT |
-
-**Para implementação real (backend necessário):**
-
-| Ferramenta | Uso | Licença |
-|---|---|---|
-| yt-dlp | Download de vídeos públicos | Unlicense |
-| cobalt.tools | API de download público | AGPL-3.0 |
-| Supabase | Storage + Database | Apache-2.0 |
-| Playwright | Scraping público (TOS) | Apache-2.0 |
 
 ---
 
@@ -109,113 +68,101 @@ Cada job passa por: `pending → processing → completed/failed`
 ### Pré-requisitos
 
 - Node.js 20+
-- npm ou yarn
+- npm
+- yt-dlp (para coleta real): `pip install yt-dlp` ou `brew install yt-dlp`
 
 ### Instalação
 
 ```bash
-# Clonar o repositório
+# Clonar
 git clone https://github.com/concurseiroia0-cmyk/video-em-massa.git
 cd video-em-massa
 
 # Instalar dependências
 npm install
 
-# Iniciar desenvolvimento
+# Copiar variáveis de ambiente
+cp .env.example .env
+
+# Iniciar frontend (porta 5173)
 npm run dev
+
+# Em outro terminal: iniciar backend (porta 3001)
+npm run server
 ```
 
-### Variáveis de Ambiente
+### Backend (Coleta Real)
 
-Para implementação com backend real, crie um `.env`:
-
-```env
-# Supabase (para Storage e Database)
-VITE_SUPABASE_URL=https://seu-projeto.supabase.co
-VITE_SUPABASE_ANON_KEY=sua-chave-anon-aqui
-
-# Configurações de fila
-VITE_MAX_CONCURRENT_JOBS=3
-VITE_MAX_RETRIES=3
-VITE_REQUEST_TIMEOUT=30000
-
-# Provider APIs (NUNCA no frontend em produção)
-# Estas variáveis devem ser usadas em um backend/edge function
-PROVIDER_YTDLP_PATH=/usr/local/bin/yt-dlp
-```
-
-### Build e Deploy
+O backend usa **yt-dlp** (open-source, Unlicense) para buscar dados públicos:
 
 ```bash
-# Build para produção
-npm run build
+# Verificar yt-dlp
+yt-dlp --version
 
-# Preview local
-npm run preview
-
-# Deploy automático via GitHub Actions (push na branch main)
+# O servidor fica em http://localhost:3001
+# Health check: GET /api/health
+# Coleta: POST /api/collect
 ```
+
+### Frontend (GitHub Pages)
+
+O frontend funciona standalone com dados simulados quando o backend não está disponível.
 
 ---
 
-## 📁 Estrutura do Projeto
+## 🗄️ Banco de Dados (Supabase)
 
-```
-src/
-├── components/
-│   └── Layout.tsx          # Sidebar + topbar shell
-├── pages/
-│   ├── Dashboard.tsx        # Métricas e visão geral
-│   ├── Collector.tsx        # Coletor básico (existente)
-│   ├── Queue.tsx            # Fila de importação (existente)
-│   ├── Templates.tsx        # Editor de templates
-│   ├── Library.tsx          # Biblioteca de vídeos
-│   ├── Campaigns.tsx        # Gerenciamento de campanhas
-│   ├── Scheduler.tsx        # Calendário e agendamento
-│   ├── Accounts.tsx         # Contas sociais
-│   ├── Publications.tsx     # Status e logs de publicação
-│   ├── ImportProfile.tsx    # ⭐ NOVO: Importar Perfil
-│   └── Landing.tsx          # Landing page
-├── providers/
-│   ├── types.ts             # Interface de providers
-│   ├── index.ts             # Factory
-│   ├── instagram/           # Provider Instagram
-│   └── tiktok/              # Provider TikTok
-├── queue/
-│   ├── types.ts             # Tipos da fila
-│   └── manager.ts           # Gerenciador de fila
-├── data/
-│   ├── types.ts             # Tipos globais
-│   └── mockData.ts          # Dados simulados
-└── utils/
-    └── helpers.ts           # Funções utilitárias
-```
+Schema SQL disponível em `database/schema.sql`.
+
+Tabelas:
+- `collected_videos` — Vídeos coletados (platform + source_id único)
+- `collection_jobs` — Jobs de coleta em lote
+
+Para criar no Supabase:
+1. Acesse o SQL Editor
+2. Cole o conteúdo de `database/schema.sql`
+3. Execute
 
 ---
 
 ## 🧪 Testando o Módulo
 
-### 1. Teste com 1 vídeo
-1. Acesse "Importar Perfil"
-2. Selecione a plataforma (TikTok ou Instagram)
-3. Digite um @username (ex: `natgeo`, `khaby.lame`)
-4. Selecione Quantidade: 10
-5. Clique "Buscar Vídeos"
-6. Selecione apenas 1 vídeo
-7. Clique "Importar Selecionados"
+### Teste 1: 1 vídeo
+1. Acesse `/#/importar-perfil`
+2. Plataforma: Instagram
+3. Perfil: `@flamengo`
+4. Quantidade: 10
+5. Clique "Encontrar Vídeos"
+6. Selecione 1 vídeo
+7. Verifique o link "Ver vídeo original" → abre Instagram
 
-### 2. Teste com 10 vídeos
-1. Repita os passos acima
-2. Selecione 10 vídeos
-3. Observe a fila processando 3 por vez (concorrência configurável)
+### Teste 2: 10 vídeos
+1. Repita acima com 10 vídeos
+2. Verifique que todos são do perfil @flamengo
+3. Clique "Visualizar" em um → abre embed
 
-### 3. Teste em lote (50-100)
-1. Selecione Quantidade: 100
-2. Clique "Selecionar Todos"
-3. Importe 100 vídeos
-4. Observe o progresso geral (0/100 → 100/100)
-5. Teste pause/resume
-6. Teste retry em jobs com erro
+### Teste 3: Lote (50-100)
+1. Selecione TOP 50 ou TOP 100
+2. Clique "Importar"
+3. Observe a fila processando
+
+### Teste de erro
+1. Busque por `@perfil_inexistente_xyz`
+2. Sistema deve mostrar: "Perfil não encontrado"
+
+---
+
+## 📋 Dependências
+
+| Dependência | Uso | Licença |
+|---|---|---|
+| React 19 | UI Framework | MIT |
+| TypeScript 6 | Type safety | Apache-2.0 |
+| Vite 8 | Build tool | MIT |
+| Tailwind CSS 4 | Styling | MIT |
+| yt-dlp | Coleta de dados públicos | Unlicense |
+| Express | Backend API | MIT |
+| Supabase | Storage + Database | Apache-2.0 |
 
 ---
 

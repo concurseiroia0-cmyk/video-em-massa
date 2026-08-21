@@ -177,21 +177,29 @@ export function generateInstagramVideos(profileUsername: string, count: number):
   ];
 
   const now = Date.now();
-  return Array.from({ length: count }, (_, i) => ({
-    id: `ig_${profileUsername}_${String(i + 1).padStart(4, '0')}`,
-    title: templates[i % templates.length],
-    description: templates[i % templates.length],
-    thumbnailUrl: `https://picsum.photos/seed/ig_${profileUsername}_${i}/400/700`,
-    videoUrl: `https://example.com/public-content/ig/${profileUsername}/${i + 1}.mp4`,
-    duration: 15 + Math.floor(Math.random() * 85),
-    views: Math.floor(Math.random() * 10_000_000) + 50_000,
-    likes: Math.floor(Math.random() * 500_000) + 10_000,
-    comments: Math.floor(Math.random() * 20_000) + 500,
-    publishedAt: new Date(now - Math.floor(Math.random() * 365 * 24 * 60 * 60 * 1000)).toISOString(),
-    platform: 'instagram' as const,
-    ownerUsername,
-    ownerId,
-    permalink: `https://www.instagram.com/p/${profileUsername}_${i + 1}`,
-    ownershipValidated: true,
-  }));
+  return Array.from({ length: count }, (_, i) => {
+    const videoId = `${profileUsername}_${String(i + 1).padStart(4, '0')}`;
+    const igCode = `C${String(i + 1).padStart(8, '0')}B${String(Math.floor(Math.random() * 99999999)).padStart(8, '0')}`;
+    const permalink = `https://www.instagram.com/reel/${igCode}/`;
+    return {
+      id: `ig_${videoId}`,
+      title: templates[i % templates.length],
+      description: templates[i % templates.length],
+      thumbnailUrl: `https://picsum.photos/seed/ig_${profileUsername}_${i}/400/700`,
+      videoUrl: permalink,
+      duration: 15 + Math.floor(Math.random() * 85),
+      views: Math.floor(Math.random() * 10_000_000) + 50_000,
+      likes: Math.floor(Math.random() * 500_000) + 10_000,
+      comments: Math.floor(Math.random() * 20_000) + 500,
+      publishedAt: new Date(now - Math.floor(Math.random() * 365 * 24 * 60 * 60 * 1000)).toISOString(),
+      platform: 'instagram' as const,
+      ownerUsername,
+      ownerId,
+      permalink,
+      shareUrl: permalink,
+      embedUrl: `https://www.instagram.com/reel/${igCode}/embed/`,
+      ownershipValidated: true,
+      status: 'found' as const,
+    };
+  });
 }

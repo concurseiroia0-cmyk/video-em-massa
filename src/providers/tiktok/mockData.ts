@@ -164,21 +164,28 @@ export function generateTikTokVideos(profileUsername: string, count: number): Vi
   ];
 
   const now = Date.now();
-  return Array.from({ length: count }, (_, i) => ({
-    id: `tt_${profileUsername}_${String(i + 1).padStart(4, '0')}`,
-    title: templates[i % templates.length],
-    description: templates[i % templates.length],
-    thumbnailUrl: `https://picsum.photos/seed/tt_${profileUsername}_${i}/400/700`,
-    videoUrl: `https://example.com/public-content/tt/${profileUsername}/${i + 1}.mp4`,
-    duration: 8 + Math.floor(Math.random() * 52),
-    views: Math.floor(Math.random() * 50_000_000) + 100_000,
-    likes: Math.floor(Math.random() * 2_000_000) + 50_000,
-    comments: Math.floor(Math.random() * 100_000) + 1_000,
-    publishedAt: new Date(now - Math.floor(Math.random() * 180 * 24 * 60 * 60 * 1000)).toISOString(),
-    platform: 'tiktok' as const,
-    ownerUsername,
-    ownerId,
-    permalink: `https://www.tiktok.com/@${profileUsername}/video/${profileUsername}_${i + 1}`,
-    ownershipValidated: true,
-  }));
+  return Array.from({ length: count }, (_, i) => {
+    const videoId = `${String(Math.floor(Math.random() * 9999999999999))}`;
+    const permalink = `https://www.tiktok.com/@${profileUsername}/video/${videoId}`;
+    return {
+      id: `tt_${profileUsername}_${String(i + 1).padStart(4, '0')}`,
+      title: templates[i % templates.length],
+      description: templates[i % templates.length],
+      thumbnailUrl: `https://picsum.photos/seed/tt_${profileUsername}_${i}/400/700`,
+      videoUrl: permalink,
+      duration: 8 + Math.floor(Math.random() * 52),
+      views: Math.floor(Math.random() * 50_000_000) + 100_000,
+      likes: Math.floor(Math.random() * 2_000_000) + 50_000,
+      comments: Math.floor(Math.random() * 100_000) + 1_000,
+      publishedAt: new Date(now - Math.floor(Math.random() * 180 * 24 * 60 * 60 * 1000)).toISOString(),
+      platform: 'tiktok' as const,
+      ownerUsername,
+      ownerId,
+      permalink,
+      shareUrl: permalink,
+      embedUrl: `https://www.tiktok.com/embed/v2/${videoId}`,
+      ownershipValidated: true,
+      status: 'found' as const,
+    };
+  });
 }

@@ -158,12 +158,13 @@ export class TikTokProvider implements ContentProvider {
   }
 
   async getVideoMetadata(videoId: string): Promise<VideoMetadata> {
+    const permalink = `https://www.tiktok.com/video/${videoId}`;
     return {
       id: videoId,
       title: `TikTok Video ${videoId}`,
       description: `Public TikTok video ${videoId}`,
       thumbnailUrl: `https://picsum.photos/seed/${videoId}/400/700`,
-      videoUrl: `https://example.com/public-content/tt/${videoId}.mp4`,
+      videoUrl: permalink,
       duration: 20,
       views: 200_000,
       likes: 20_000,
@@ -172,8 +173,11 @@ export class TikTokProvider implements ContentProvider {
       platform: 'tiktok',
       ownerUsername: 'unknown',
       ownerId: 'unknown',
-      permalink: `https://www.tiktok.com/video/${videoId}`,
+      permalink,
+      shareUrl: permalink,
+      embedUrl: `https://www.tiktok.com/embed/v2/${videoId}`,
       ownershipValidated: false,
+      status: 'found',
     };
   }
 
@@ -193,10 +197,10 @@ export class TikTokProvider implements ContentProvider {
   private sortVideos(videos: VideoMetadata[], sortBy: string): VideoMetadata[] {
     const sorted = [...videos];
     switch (sortBy) {
-      case 'views':  return sorted.sort((a, b) => b.views - a.views);
-      case 'likes':  return sorted.sort((a, b) => b.likes - a.likes);
+      case 'views':  return sorted.sort((a, b) => (b.views ?? 0) - (a.views ?? 0));
+      case 'likes':  return sorted.sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0));
       case 'recent': return sorted.sort(
-        (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
+        (a, b) => new Date(b.publishedAt ?? 0).getTime() - new Date(a.publishedAt ?? 0).getTime()
       );
       default: return sorted;
     }
@@ -213,6 +217,7 @@ export class TikTokProvider implements ContentProvider {
       resolvedProfile: profile,
       totalFetched, ownershipPassed, ownershipRejected,
       warnings, steps,
+      dataSource: 'mock',
     };
   }
 }
