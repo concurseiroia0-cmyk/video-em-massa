@@ -3,14 +3,10 @@
  *
  * POST /api/collect
  *
- * Collects public videos from Instagram or TikTok profiles
- * using yt-dlp (open-source, no authentication required).
+ * Collects public videos using yt-dlp.
+ * Returns REAL data from the platform, or a clear error if yt-dlp is unavailable.
  *
- * SECURITY:
- * - Only public content
- * - No credentials stored or passed
- * - Username is sanitized before use
- * - All URLs are validated
+ * SECURITY: Only public content, no credentials, no bypass mechanisms.
  */
 
 import { Router } from 'express';
@@ -18,17 +14,9 @@ import { collectInstagram, collectTiktok, getYtdlpVersion } from '../utils/ytdlp
 
 const router = Router();
 
-// ── Input Validation ───────────────────────────────────────────
-
 function sanitizeUsername(input: string): string | null {
   if (!input || typeof input !== 'string') return null;
-  const cleaned = input
-    .trim()
-    .replace(/^@/, '')
-    .replace(/\//g, '')
-    .replace(/\s+/g, '')
-    .toLowerCase();
-  // Only allow alphanumeric, dots, underscores
+  const cleaned = input.trim().replace(/^@/, '').replace(/\//g, '').replace(/\s+/g, '').toLowerCase();
   if (!/^[a-z0-9._]+$/.test(cleaned)) return null;
   if (cleaned.length < 1 || cleaned.length > 30) return null;
   return cleaned;
@@ -52,30 +40,33 @@ router.post('/collect', async (req, res) => {
   const startTime = Date.now();
 
   try {
+    // Check yt-dlp availability first
+    const ytdlpVersion = await getYtdlpVersion();
+    if (ytdlpVersion === 'NOT_INSTALLED') {
+      return res.status(503).json({
+        success: false,
+        error: 'yt-dlp não está instalado. Instale com: pip install yt-dlp',
+        details: 'yt-dlp is required for real video collection. Install it and restart the server.',
+      });
+    }
+
     const { platform, username, quantity, sortBy } = req.body;
 
-    // Validate inputs
     const validPlatform = validatePlatform(platform);
     if (!validPlatform) {
-      return res.status(400).json({
-        success: false,
-        error: 'Plataforma inválida. Use "instagram" ou "tiktok".',
-      });
+      return res.status(400).json({ success: false, error: 'Plataforma inválida.' });
     }
 
     const validUsername = sanitizeUsername(username);
     if (!validUsername) {
-      return res.status(400).json({
-        success: false,
-        error: 'Username inválido. Use apenas letras, números, pontos e underlines.',
-      });
+      return res.status(400).json({ success: false, error: 'Username inválido.' });
     }
 
     const validQuantity = validateQuantity(quantity);
 
     console.log(`[Collect] Platform: ${validPlatform}, Username: @${validUsername}, Quantity: ${validQuantity}, Sort: ${sortBy}`);
+    console.log(`[Collect] yt-dlp version: ${ytdlpVersion}`);
 
-    // Collect videos
     const result = validPlatform === 'instagram'
       ? await collectInstagram(validUsername, validQuantity)
       : await collectTiktok(validUsername, validQuantity);
@@ -108,7 +99,7 @@ router.post('/collect', async (req, res) => {
     }
 
     const elapsed = Date.now() - startTime;
-    console.log(`[Collect] Success: ${sorted.length} videos in ${elapsed}ms`);
+    console.log(`[Collect] Success: ${sorted.length} REAL videos in ${elapsed}ms`);
 
     res.json({
       success: true,
@@ -117,13 +108,11 @@ router.post('/collect', async (req, res) => {
       elapsed,
       username: validUsername,
       platform: validPlatform,
+      source: 'yt-dlp',
     });
   } catch (error) {
     console.error('[Collect] Unexpected error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Erro interno do servidor.',
-    });
+    res.status(500).json({ success: false, error: 'Erro interno do servidor.' });
   }
 });
 
@@ -132,8 +121,9 @@ router.post('/collect', async (req, res) => {
 router.get('/health', async (_req, res) => {
   const ytdlpVersion = await getYtdlpVersion();
   res.json({
-    status: 'ok',
+    status: ytdlpVersion === 'NOT_INSTALLED' ? 'degraded' : 'ok',
     ytdlp: ytdlpVersion,
+    ytdlpAvailable: ytdlpVersion !== 'NOT_INSTALLED',
     timestamp: new Date().toISOString(),
   });
 });

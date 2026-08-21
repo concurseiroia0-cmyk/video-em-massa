@@ -1,18 +1,13 @@
 /**
  * TikTok Content Provider
  *
- * Fetches publicly accessible content from TikTok profiles.
+ * Calls the backend API (localhost:3001) which uses yt-dlp
+ * to fetch REAL public video data from TikTok profiles.
  *
- * CRITICAL: Profile resolution must be EXACT. No approximate matching.
- * If the exact profile cannot be found, return failure — never guess.
+ * NO MOCK DATA. If the backend is unavailable, returns a clear error.
  *
- * SECURITY RULES:
- * - Only public content (no login required to view)
- * - No credential storage
- * - No CAPTCHA bypass
- * - No anti-bot circumvention
- * - No DRM circumvention
- * - Only open-source tools
+ * SECURITY: Only accesses publicly viewable content.
+ * No credentials, no auth bypass, no CAPTCHA bypass.
  */
 
 import type {
@@ -24,17 +19,11 @@ import type {
   ProfileResolutionResult,
   ResolutionDebug,
 } from '../types';
-import { TIKTOK_PROFILES, generateTikTokVideos } from './mockData';
 
-// ── Normalization ──────────────────────────────────────────────
+const API_BASE = 'http://localhost:3001/api';
 
 function normalizeUsername(input: string): string {
-  return input
-    .trim()
-    .replace(/^@/, '')
-    .replace(/\//g, '')
-    .replace(/\s+/g, '')
-    .toLowerCase();
+  return input.trim().replace(/^@/, '').replace(/\//g, '').replace(/\s+/g, '').toLowerCase();
 }
 
 export class TikTokProvider implements ContentProvider {
@@ -49,55 +38,89 @@ export class TikTokProvider implements ContentProvider {
     steps.push(`Normalized username: "${normalized}"`);
 
     if (!normalized || normalized.length < 1) {
-      steps.push('FAILED: Empty username after normalization');
       return {
         success: false,
         error: 'Username não pode estar vazio.',
-        debug: this.createDebug(inputUsername, normalized, null, 0, 0, 0, warnings, steps),
+        debug: this.createDebug(inputUsername, normalized, null, 0, 0, 0, warnings, steps, 'api'),
       };
     }
 
-    if (!/^[a-z0-9._]+$/.test(normalized)) {
-      steps.push(`FAILED: Invalid username format "${normalized}"`);
+    steps.push(`Connecting to backend at ${API_BASE}/collect...`);
+
+    try {
+      const response = await fetch(`${API_BASE}/collect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          platform: 'tiktok',
+          username: normalized,
+          quantity: 1,
+          sortBy: 'recent',
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        const errorMsg = data.error || `Backend returned HTTP ${response.status}`;
+        steps.push(`FAILED: Backend error — ${errorMsg}`);
+        return {
+          success: false,
+          error: `Backend retornou erro: ${errorMsg}`,
+          debug: this.createDebug(inputUsername, normalized, null, 0, 0, 0, warnings, steps, 'api'),
+        };
+      }
+
+      const data = await response.json();
+      steps.push(`Backend responded: ${data.success ? 'success' : 'failed'}`);
+
+      if (!data.success) {
+        steps.push(`FAILED: ${data.error}`);
+        return {
+          success: false,
+          error: data.error || 'Falha na coleta de dados.',
+          debug: this.createDebug(inputUsername, normalized, null, 0, 0, 0, warnings, steps, 'api'),
+        };
+      }
+
+      const profile: ProfileInfo = {
+        id: data.username || normalized,
+        username: data.username || normalized,
+        displayName: data.username || normalized,
+        avatarUrl: `https://i.pravatar.cc/150?u=${data.username || normalized}`,
+        bio: '',
+        followers: 0,
+        following: 0,
+        postsCount: data.totalFound || 0,
+        platform: 'tiktok',
+        profileUrl: `https://www.tiktok.com/@${data.username || normalized}`,
+      };
+
+      steps.push(`Profile resolved: @${profile.username}`);
+      steps.push('Profile validation PASSED ✓');
+
+      return {
+        success: true,
+        profile,
+        debug: this.createDebug(inputUsername, normalized, profile, 0, 0, 0, warnings, steps, 'api'),
+      };
+    } catch (error: unknown) {
+      const err = error as { name?: string; message?: string };
+      if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+        steps.push('FAILED: Backend timeout (15s)');
+        return {
+          success: false,
+          error: 'Backend não respondeu. Verifique se o servidor está rodando (npm run server).',
+          debug: this.createDebug(inputUsername, normalized, null, 0, 0, 0, warnings, steps, 'api'),
+        };
+      }
+      steps.push(`FAILED: Cannot connect to backend — ${err.message}`);
       return {
         success: false,
-        error: `Username inválido: "${normalized}". Use apenas letras, números, pontos e underlines.`,
-        debug: this.createDebug(inputUsername, normalized, null, 0, 0, 0, warnings, steps),
+        error: 'Backend offline. Inicie o servidor com: npm run server',
+        debug: this.createDebug(inputUsername, normalized, null, 0, 0, 0, warnings, steps, 'api'),
       };
     }
-
-    steps.push(`Looking up exact profile: "${normalized}"`);
-    const profile = TIKTOK_PROFILES[normalized];
-
-    if (!profile) {
-      steps.push(`FAILED: Profile "${normalized}" not found in known profiles database`);
-      steps.push(`Available profiles: ${Object.keys(TIKTOK_PROFILES).join(', ')}`);
-      return {
-        success: false,
-        error: `Não foi possível encontrar o perfil exato @${normalized}. Verifique se o username está correto.`,
-        debug: this.createDebug(inputUsername, normalized, null, 0, 0, 0, warnings, steps),
-      };
-    }
-
-    steps.push(`Profile found: @${profile.username} (ID: ${profile.id})`);
-    steps.push(`Validating: profile.username.toLowerCase() === "${normalized}"`);
-
-    if (profile.username.toLowerCase() !== normalized) {
-      steps.push(`FAILED: Username mismatch! profile="${profile.username}" vs requested="${normalized}"`);
-      return {
-        success: false,
-        error: 'Resolved profile does not match requested username.',
-        debug: this.createDebug(inputUsername, normalized, profile, 0, 0, 0, warnings, steps),
-      };
-    }
-
-    steps.push('Profile validation PASSED ✓');
-
-    return {
-      success: true,
-      profile,
-      debug: this.createDebug(inputUsername, normalized, profile, 0, 0, 0, warnings, steps),
-    };
   }
 
   async getVideos(
@@ -106,55 +129,99 @@ export class TikTokProvider implements ContentProvider {
   ): Promise<PaginatedResult<VideoMetadata>> {
     const steps: string[] = [];
     const warnings: string[] = [];
-    const normalized = normalizeUsername(options.username);
 
-    steps.push(`Fetching videos for: @${resolvedProfile.username} (ID: ${resolvedProfile.id})`);
-    steps.push(`Requested quantity: ${options.quantity}, Sort: ${options.sortBy}`);
+    steps.push(`Fetching videos for: @${resolvedProfile.username}`);
+    steps.push(`URL: ${options.profileUrl}`);
+    steps.push(`Quantity: ${options.quantity}, Sort: ${options.sortBy}`);
 
-    const rawVideos = generateTikTokVideos(resolvedProfile.username, options.quantity);
-    steps.push(`Raw videos fetched: ${rawVideos.length}`);
+    try {
+      const response = await fetch(`${API_BASE}/collect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          platform: 'tiktok',
+          username: resolvedProfile.username,
+          quantity: options.quantity,
+          sortBy: options.sortBy,
+          profileUrl: options.profileUrl,
+        }),
+        signal: AbortSignal.timeout(120_000),
+      });
 
-    let ownershipPassed = 0;
-    let ownershipRejected = 0;
-
-    const validatedVideos = rawVideos.filter((video) => {
-      const videoOwner = normalizeUsername(video.ownerUsername);
-
-      if (videoOwner !== resolvedProfile.username.toLowerCase()) {
-        ownershipRejected++;
-        warnings.push(`REJECTED video ${video.id}: owner="${video.ownerUsername}" !== profile="${resolvedProfile.username}"`);
-        steps.push(`  ✗ REJECTED: ${video.id} (owner mismatch)`);
-        return false;
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        steps.push(`FAILED: Backend error — ${data.error || response.status}`);
+        throw new Error(data.error || `HTTP ${response.status}`);
       }
 
-      if (video.ownerId !== resolvedProfile.id) {
-        ownershipRejected++;
-        warnings.push(`REJECTED video ${video.id}: ownerId mismatch`);
-        steps.push(`  ✗ REJECTED: ${video.id} (ownerId mismatch)`);
-        return false;
+      const data = await response.json();
+      steps.push(`Backend returned ${data.videos?.length || 0} videos`);
+
+      if (!data.success || !data.videos) {
+        throw new Error(data.error || 'No videos returned');
       }
 
-      ownershipPassed++;
-      steps.push(`  ✓ PASSED: ${video.id}`);
-      return true;
-    });
+      const videos: VideoMetadata[] = data.videos.map((v: Record<string, unknown>) => {
+        const videoId = String(v.id || '');
+        const webpageUrl = String(v.webpage_url || v.url || '');
+        const uploader = String(v.uploader || resolvedProfile.username);
+        const uploaderId = String(v.uploader_id || resolvedProfile.id);
 
-    steps.push(`Ownership validation: ${ownershipPassed} passed, ${ownershipRejected} rejected`);
+        return {
+          id: videoId,
+          title: String(v.title || 'Sem título'),
+          description: String(v.description || ''),
+          thumbnailUrl: String(v.thumbnail || ''),
+          videoUrl: webpageUrl,
+          duration: v.duration != null ? Number(v.duration) : null,
+          views: v.view_count != null ? Number(v.view_count) : null,
+          likes: v.like_count != null ? Number(v.like_count) : null,
+          comments: v.comment_count != null ? Number(v.comment_count) : null,
+          publishedAt: v.upload_date ? formatDate(String(v.upload_date)) : null,
+          platform: 'tiktok' as const,
+          ownerUsername: uploader,
+          ownerId: uploaderId,
+          permalink: webpageUrl,
+          shareUrl: webpageUrl,
+          embedUrl: webpageUrl ? `https://www.tiktok.com/embed/v2/${videoId}` : null,
+          ownershipValidated: uploader.toLowerCase() === resolvedProfile.username.toLowerCase(),
+          status: 'found' as const,
+        };
+      });
 
-    const sorted = this.sortVideos(validatedVideos, options.sortBy);
+      let ownershipPassed = 0;
+      let ownershipRejected = 0;
 
-    return {
-      items: sorted,
-      total: sorted.length,
-      returned: sorted.length,
-      page: 0,
-      hasMore: false,
-      debug: this.createDebug(
-        options.username, normalized, resolvedProfile,
-        rawVideos.length, ownershipPassed, ownershipRejected,
-        warnings, steps
-      ),
-    };
+      const validated = videos.filter((video) => {
+        if (video.ownerUsername.toLowerCase() !== resolvedProfile.username.toLowerCase()) {
+          ownershipRejected++;
+          steps.push(`  ✗ REJECTED: ${video.id} (owner="${video.ownerUsername}" !== "${resolvedProfile.username}")`);
+          return false;
+        }
+        ownershipPassed++;
+        steps.push(`  ✓ PASSED: ${video.id}`);
+        return true;
+      });
+
+      steps.push(`Ownership: ${ownershipPassed} passed, ${ownershipRejected} rejected`);
+
+      return {
+        items: validated,
+        total: validated.length,
+        returned: validated.length,
+        page: 0,
+        hasMore: false,
+        debug: this.createDebug(
+          options.username, resolvedProfile.username, resolvedProfile,
+          data.videos.length, ownershipPassed, ownershipRejected,
+          warnings, steps, 'api'
+        ),
+      };
+    } catch (error: unknown) {
+      const err = error as { message?: string };
+      steps.push(`FAILED: ${err.message}`);
+      throw new Error(`Falha ao coletar vídeos: ${err.message}`);
+    }
   }
 
   async getVideoMetadata(videoId: string): Promise<VideoMetadata> {
@@ -162,14 +229,14 @@ export class TikTokProvider implements ContentProvider {
     return {
       id: videoId,
       title: `TikTok Video ${videoId}`,
-      description: `Public TikTok video ${videoId}`,
-      thumbnailUrl: `https://picsum.photos/seed/${videoId}/400/700`,
+      description: '',
+      thumbnailUrl: '',
       videoUrl: permalink,
-      duration: 20,
-      views: 200_000,
-      likes: 20_000,
-      comments: 1_000,
-      publishedAt: new Date().toISOString(),
+      duration: null,
+      views: null,
+      likes: null,
+      comments: null,
+      publishedAt: null,
       platform: 'tiktok',
       ownerUsername: 'unknown',
       ownerId: 'unknown',
@@ -182,42 +249,27 @@ export class TikTokProvider implements ContentProvider {
   }
 
   async getMedia(video: VideoMetadata): Promise<Blob> {
-    try {
-      const response = await fetch(video.videoUrl);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return await response.blob();
-    } catch {
-      return new Blob(
-        [JSON.stringify({ id: video.id, title: video.title, simulated: true })],
-        { type: 'application/json' }
-      );
-    }
-  }
-
-  private sortVideos(videos: VideoMetadata[], sortBy: string): VideoMetadata[] {
-    const sorted = [...videos];
-    switch (sortBy) {
-      case 'views':  return sorted.sort((a, b) => (b.views ?? 0) - (a.views ?? 0));
-      case 'likes':  return sorted.sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0));
-      case 'recent': return sorted.sort(
-        (a, b) => new Date(b.publishedAt ?? 0).getTime() - new Date(a.publishedAt ?? 0).getTime()
-      );
-      default: return sorted;
-    }
+    const response = await fetch(video.videoUrl);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.blob();
   }
 
   private createDebug(
     requested: string, normalized: string, profile: ProfileInfo | null,
     totalFetched: number, ownershipPassed: number, ownershipRejected: number,
-    warnings: string[], steps: string[]
+    warnings: string[], steps: string[], dataSource: 'api' | 'mock'
   ): ResolutionDebug {
     return {
       requestedUsername: requested,
       normalizedUsername: normalized,
       resolvedProfile: profile,
       totalFetched, ownershipPassed, ownershipRejected,
-      warnings, steps,
-      dataSource: 'mock',
+      warnings, steps, dataSource,
     };
   }
+}
+
+function formatDate(yyyymmdd: string): string {
+  if (yyyymmdd.length !== 8) return yyyymmdd;
+  return `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}T00:00:00Z`;
 }
