@@ -176,7 +176,7 @@ export default function Templates() {
               if (layer.type === 'watermark') {
                 return (
                   <div key={i} className="absolute bottom-1/2 left-1/2 -translate-x-1/2 translate-y-1/2 text-[10px] text-slate-500/30 select-none">
-                    {layer.config.text || '@brand'}
+                    {String(layer.config.text || '@brand')}
                   </div>
                 );
               }
@@ -190,7 +190,7 @@ export default function Templates() {
                       'bottom-24'
                     }`}
                   >
-                    <p style={{ fontSize: `${(layer.config.size || 36) / 6}px` }} className="font-bold">
+                    <p style={{ fontSize: `${Number(layer.config.size || 36) / 6}px` }} className="font-bold">
                       Legendas aqui...
                     </p>
                   </div>
@@ -199,7 +199,7 @@ export default function Templates() {
               if (layer.type === 'cta') {
                 return (
                   <div key={i} className="absolute bottom-4 left-2 right-2 rounded-lg bg-gradient-to-r from-purple-electric to-neon-green px-4 py-2 text-center text-xs font-bold text-white">
-                    {layer.config.text || 'Siga para mais!'}
+                    {String(layer.config.text || 'Siga para mais!')}
                   </div>
                 );
               }
@@ -207,7 +207,7 @@ export default function Templates() {
                 return (
                   <div key={i} className="absolute inset-x-0 top-1/3 flex justify-center">
                     <div className="rounded-lg bg-black/80 px-4 py-2 border border-slate-600">
-                      <p className="text-[10px] font-bold text-white">{layer.config.text || 'INTRO 2s'}</p>
+                      <p className="text-[10px] font-bold text-white">{String(layer.config.text || 'INTRO 2s')}</p>
                     </div>
                   </div>
                 );
